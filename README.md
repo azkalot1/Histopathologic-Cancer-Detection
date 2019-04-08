@@ -1,2 +1,2 @@
-# histopathologic_cancer_detection
-Kaggle histopathologic cancer detection (playground) competition solution
+# Histopathologic cancer detection
+Kaggle histopathologic cancer detection (playground) competition solution using pytorch 
