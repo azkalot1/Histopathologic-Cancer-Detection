@@ -24,15 +24,15 @@ from utils import *
 
 
 
-DIR = '/scratch/skolchen/cancer'
+DIR = './' #folder with train and test data
 train_im_dir = DIR+'/train'
 test_im_dir = DIR+'/test'
-train_data = pd.read_csv(os.path.join(DIR,'train_labels.csv'))
-patch_ids = pd.read_csv(os.path.join(DIR,'patch_id_wsi.csv'))
-model_dir = '/scratch/skolchen/cancer/resnet34_v2'
+train_data = pd.read_csv(os.path.join(DIR,'train_labels.csv')) #labels for train data
+patch_ids = pd.read_csv(os.path.join(DIR,'patch_id_wsi.csv')) #slides id for correct split 
+model_dir = os.path.join(DIR, 'resnet34')
 model_name = 'resnet34'
-n_groups = 15
-b_size = 96
+n_groups = 15 # number of folds
+b_size = 96 # batch size
 
 
 use_cuda = torch.cuda.is_available()
@@ -48,7 +48,7 @@ for train_index, test_index in skf.split(train_data['id'].values, train_data['la
     folds_id_val.append(train_data['id'].values[test_index])
     folds_label_train.append(train_data['label'].values[train_index])
     folds_label_val.append(train_data['label'].values[test_index])    
-samples_per_epoch = 50000
+samples_per_epoch = 50000 #define number of samples per epoch, since dataset is big
 for valid_idx in range(n_groups):
     logfile =  model_dir+'/{}.fold{}.logfile.txt'.format(model_name, valid_idx)
     best_w_path = model_dir+'/{}.fold{}.best.pt'.format(model_name, valid_idx)
@@ -81,10 +81,11 @@ for valid_idx in range(n_groups):
     best_score = 0
     best_loss = 1e5
     idx_stop = 0
+    #load pretrained resnet34 model
     base_model = pretrainedmodels.resnet34(num_classes=1000, 
                                            pretrained='imagenet').to(device)
     model = Net(base_model, 512).to(device)
-    #training with frozen
+    #training with frozen layers except for classfication head 
     optimizer = optim.SGD([{'params': model.layer0.parameters(), 'lr': 0},
                            {'params': model.layer1.parameters(), 'lr': 0},
                            {'params': model.layer2.parameters(), 'lr': 0},
@@ -94,6 +95,12 @@ for valid_idx in range(n_groups):
     train_loss = train(model, train_loader, optimizer, 0, 100, loss_f, samples_per_epoch)
     test_loss, score = test(model, val_loader, loss_f, 0)
     write_log(logfile, train_loss, test_loss, score)
+    '''
+    start training the model with all layers
+    Training scheme : train while validation loss decreases, save model at each improvement of test loss. 
+    if loss does not decreases for 3 epochs, reload last best model, reduce lr by factor of 2. 
+    If loss still doesn't decrease for 10 epochs, stop the model. 
+    '''
     for epoch in range(50):
         optimizer = torch.optim.SGD(model.parameters(), lr=curr_lr, momentum=0.9)
         scheduler = CyclicLR(optimizer, max_lr=3*curr_lr)
